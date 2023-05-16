@@ -1,4 +1,6 @@
 # This is a sample Python script.
+from _decimal import Decimal
+
 import openpyxl as openpyxl
 
 import pandas as pd
@@ -7,7 +9,7 @@ import pip
 # Install openpyxl for reading .xlsx files
 
 # Read the .xlsx file
-file_path = "exterminator_data.xlsx"
+file_path = "data.xlsx"
 df = pd.read_excel(file_path, engine='openpyxl')
 
 print("Column names:")
@@ -214,7 +216,7 @@ for index, row in df.iterrows():
     hear_about_us = row['How did you hear about us']
 
     # Check if the criteria for a new call are met
-    if (service_type == 'One-Time'
+    if (service_type not in ['Recurring', 'Renewal', 'Follow-Up', 'Retreat']
             and lead_status not in ['4- Dave assist', '7-Reg Account', '7C- Inactive Regs', '7H- Reg On Hold',
                                     '7T- Transferred', '7X- Owes $$ for Regs', '10-NQC']
             and hear_about_us != 'Other Source Jobs (not from SF)'
@@ -273,7 +275,7 @@ for index, row in df.iterrows():
     service_type = row['Service Type']
 
     # Check if the criteria for a scheduled job are met
-    if lead_status == 'Scheduled' and service_type != 'Recurring':
+    if lead_status == '6 - Scheduled' and service_type != 'Recurring':
         # Increment the count of scheduled jobs for the technician
         if technician in tech_scheduled_jobs_count:
             tech_scheduled_jobs_count[technician] += 1
@@ -344,10 +346,16 @@ tech_other_source_calls_count = {}
 for index, row in df.iterrows():
     technician = row['Tech Assigned']
     how_heard = row['How did you hear about us']
+    service_type = row['Service Type']
+    lead_id = row['Lead ID  ↑']
 
     # Check if the criteria for an other source call is met
-    if pd.isna(how_heard):
+    if (
+            pd.isna(how_heard) or how_heard == 'Other Source Jobs (not from SF)') and service_type != 'Recurring' and not pd.isna(
+            lead_id):
         # Increment the count of other source calls for the technician
+        if technician == 'Collin Green':
+            print("Counted for Green -- ", lead_id)
         if technician in tech_other_source_calls_count:
             tech_other_source_calls_count[technician] += 1
         else:
@@ -356,7 +364,7 @@ for index, row in df.iterrows():
 # Print the count of other source calls per tech
 print("Number of Other Source Calls per Tech:")
 for technician, count in tech_other_source_calls_count.items():
-    print(f"{technician}: {count}")
+    print(f"{technician}: {count} -- source calls")
 
 # Create a dictionary to store the count of completed non-recurring, non-zero-charge leads per tech
 tech_completed_non_recurring_non_zero_charge_count = {}
@@ -378,71 +386,89 @@ for index, row in df.iterrows():
 
 # Create a dictionary to store the number of completed leads per tech
 tech_completed_leads_count = {}
+tech_completed_leads_count_minus_other_source_calls = {}
+
+
 
 # Iterate over the rows of the DataFrame
 for index, row in df.iterrows():
     technician = row['Tech Assigned']
     lead_status = row['Lead Status']
+    service_type = row['Service Type']
+    service_charge = row['Service Charge']
+    how_heard = row['How did you hear about us']
+    lead_id = row['Lead ID  ↑']
+
 
     # Check if the lead status is "8 - Complete"
-    if lead_status == '8-Completed':
+    # Service type is not recurring and service charge sum > 0
+    if lead_status == '8-Completed' and service_type != 'Recurring' and service_charge > 0:
         # Increment the count of completed leads for the technician
         if technician in tech_completed_leads_count:
             tech_completed_leads_count[technician] += 1
         else:
             tech_completed_leads_count[technician] = 1
-
+        if how_heard not in ['Other Source Jobs (not from SF)'] and not pd.isna(how_heard):
+            if technician in tech_completed_leads_count_minus_other_source_calls:
+                tech_completed_leads_count_minus_other_source_calls[technician] += 1
+            else:
+                tech_completed_leads_count_minus_other_source_calls[technician] = 1
 
 # Create a dictionary to store the percentage sold per tech
 tech_sold_percentage = {}
+tech_sold_percentage_minus_source = {}
 
 # Iterate over the technicians
 for technician in tech_new_calls_count.keys():
-    # Calculate the percentage sold per tech
-   # print("%d %d new calls for %s", tech_new_calls_count[technician], tech_completed_leads_count[technician])
-    tech_sold_percentage[technician] = (tech_new_calls_count[technician] / tech_completed_leads_count[technician]) * 100
+    if technician != 'nan' and technician in tech_completed_leads_count and tech_completed_leads_count[technician] != 0:
+        tech_sold_percentage[technician] = (tech_completed_leads_count[technician] / tech_new_calls_count[
+            technician]) * 100
 
 # Print the percentage sold per tech
 for tech, percentage in tech_sold_percentage.items():
     print(f'Technician: {tech}, % sold: {percentage}%')
 
-    # # Calculate the percentage of calls sold per tech
-    # print("Percentage of Calls Sold per Tech:")
-    # for technician in set(tech_new_calls_count.keys()).union(tech_completed_non_recurring_non_zero_charge_count.keys()):
-    #     new_calls_count = tech_new_calls_count.get(technician, 0)
-    #     completed_count = tech_completed_non_recurring_non_zero_charge_count.get(technician, 0)
-    #     if new_calls_count == 0:  # Avoid division by zero
-    #         percentage_sold = 0
-    #     else:
-    #         #percentage_sold = (new_calls_count / completed_count) * 100
-    #         percentage_sold = (completed_count / new_calls_count) * 100
-    #     print(f"{technician}: {percentage_sold:.2f}%")
+for technician in tech_new_calls_count.keys():
+    # Calculate the percentage sold per tech
+    # print("%d %d new calls for %s", tech_new_calls_count[technician], tech_completed_leads_count[technician])
+    num = tech_new_calls_count[technician]
+    if technician in tech_other_source_calls_count:
+        num = tech_new_calls_count[technician] - tech_other_source_calls_count[technician]
+        if technician in tech_completed_leads_count_minus_other_source_calls:
+            tech_sold_percentage_minus_source[technician] = (tech_completed_leads_count_minus_other_source_calls[technician] / num) * 100
+        else:
+            # 0%
+            tech_sold_percentage_minus_source[technician] = 0
+# Print the percentage sold per tech minus the number of source calls
+print("Number of % sold per tech minus source calls")
+for tech, percentage in tech_sold_percentage_minus_source.items():
+    print(f'Technician: {tech}, % sold: {percentage}%')
 
-    # Create a dictionary to store the count of completed jobs per tech and the total service charge collected per tech
-    tech_completed_jobs_count = {}
-    tech_total_service_charge = {}
+# Create a dictionary to store the count of completed jobs per tech and the total service charge collected per tech
+tech_completed_jobs_count = {}
+tech_total_service_charge = {}
 
-    # Iterate over the rows of the DataFrame
-    for index, row in df.iterrows():
-        technician = row['Tech Assigned']
-        lead_status = row['Lead Status']
-        service_charge = row['Service Charge']
+# Iterate over the rows of the DataFrame
+for index, row in df.iterrows():
+    technician = row['Tech Assigned']
+    lead_status = row['Lead Status']
+    service_charge = row['Service Charge']
 
-        # Check if the lead status is "Completed"
-        if lead_status == '8-Completed':
-            # Increment the count of completed jobs for the technician
-            if technician in tech_completed_jobs_count:
-                tech_completed_jobs_count[technician] += 1
-            else:
-                tech_completed_jobs_count[technician] = 1
+    # Check if the lead status is "Completed"
+    if lead_status == '8-Completed':
+        # Increment the count of completed jobs for the technician
+        if technician in tech_completed_jobs_count:
+            tech_completed_jobs_count[technician] += 1
+        else:
+            tech_completed_jobs_count[technician] = 1
 
-            # Add the service charge to the total service charge collected by the technician
-            if technician in tech_total_service_charge:
-                tech_total_service_charge[technician] += service_charge
-            else:
-                tech_total_service_charge[technician] = service_charge
+        # Add the service charge to the total service charge collected by the technician
+        if technician in tech_total_service_charge:
+            tech_total_service_charge[technician] += service_charge
+        else:
+            tech_total_service_charge[technician] = service_charge
 
-    # Print the count of completed jobs per tech and the total service charge collected per tech
+# Print the count of completed jobs per tech and the total service charge collected per tech
 print("Total Number of Jobs Completed per Tech:")
 for technician, count in tech_completed_jobs_count.items():
     print(f"{technician}: {count}")
@@ -467,7 +493,7 @@ for index, row in df.iterrows():
     payment_method = row['Check, Invoice, or Reference Info']
 
     # Check if the payment method is "Invoice"
-    if payment_method == 'To be invoiced':
+    if payment_method == 'To Be Invoiced':
         # Add the service charge to the total amount billed/bartered by the technician
         if technician in tech_billed_amount:
             tech_billed_amount[technician] += service_charge
@@ -483,9 +509,11 @@ for index, row in df.iterrows():
             tech_initial_leads_count[technician] = 1
 
 # Print the total amount billed/bartered per tech
+print("Amount billed / bartered per tech:")
 for tech, amount in tech_billed_amount.items():
     print(f'Technician: {tech}, Total amount billed/bartered: ${amount}')
 
+print("Number of initial leads per tech")
 # Print the count of leads with status "1-Initial" per tech
 for tech, count in tech_initial_leads_count.items():
     print(f'Technician: {tech}, # of leads as initials: {count}')
